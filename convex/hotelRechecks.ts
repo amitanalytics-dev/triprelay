@@ -1,5 +1,6 @@
 import {v,ConvexError} from "convex/values";
-import {internalMutation,internalQuery} from "./_generated/server";
+import {internalMutation,internalQuery,type QueryCtx} from "./_generated/server";
+import type {Doc} from "./_generated/dataModel";
 import {getSelectedRate} from "./hotelPreparation";
 import {matchHotelRecheck} from "../lib/hotelRecheck.cjs";
 const task={preparationId:v.id("hotelPreparations"),requestId:v.string()};
@@ -49,9 +50,14 @@ export const finish=internalMutation({
 export const inspect=internalQuery({
   args:task,returns:v.union(v.string(),v.null()),handler:async(ctx,args)=>{
     const row=await ctx.db.query("hotelRecheckRuns").withIndex("by_preparation_request",q=>q.eq("preparationId",args.preparationId).eq("requestId",args.requestId)).unique();
-    if(row?.status!=="ready")return null;
-    let selected=null;
-    try{selected=await getSelectedRate(ctx,{preparationId:row.preparationId,requestId:row.sourceRequestId,rateIndex:row.rateIndex});}catch{ return null; }
-    return selected && selected.searchAttempt===row.searchAttempt && selected.selectedJson===row.selectedJson?row.resultJson??null:null;
+    return row?getSavedHotelRecheck(ctx,row):null;
   },
 });
+// Shared by internal source preparation; never call a registered handler directly.
+export const getSavedHotelRecheck=async(ctx:QueryCtx,row:Doc<"hotelRecheckRuns">)=>{
+  if(row.status!=="ready" || !row.resultJson)return null;
+  try{
+    const selected=await getSelectedRate(ctx,{preparationId:row.preparationId,requestId:row.sourceRequestId,rateIndex:row.rateIndex});
+    return selected && selected.searchAttempt===row.searchAttempt && selected.selectedJson===row.selectedJson?row.resultJson:null;
+  }catch{return null;}
+};

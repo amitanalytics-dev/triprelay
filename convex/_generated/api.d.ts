@@ -31,6 +31,7 @@ import type * as logos from "../logos.js";
 import type * as metrics from "../metrics.js";
 import type * as quoteModel from "../quoteModel.js";
 import type * as quotePdf from "../quotePdf.js";
+import type * as quoteSources from "../quoteSources.js";
 import type * as quotes from "../quotes.js";
 import type * as supplierRuns from "../supplierRuns.js";
 import type * as tbo from "../tbo.js";
@@ -66,6 +67,7 @@ declare const fullApi: ApiFromModules<{
   metrics: typeof metrics;
   quoteModel: typeof quoteModel;
   quotePdf: typeof quotePdf;
+  quoteSources: typeof quoteSources;
   quotes: typeof quotes;
   supplierRuns: typeof supplierRuns;
   tbo: typeof tbo;

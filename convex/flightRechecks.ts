@@ -107,10 +107,13 @@ export const finish=internalMutation({
 });
 export const inspect=internalQuery({
   args:{runId:v.id("flightRecheckRuns")},returns:v.union(v.string(),v.null()),handler:async(ctx,args)=>{
-    const row=await ctx.db.get(args.runId);if(row?.status!=="ready")return null;
-    try{const evidence=await completeParts(ctx,row);return evidence?JSON.stringify(evidence):null;}catch{return null;}
+    const row=await ctx.db.get(args.runId);return row?getSavedFlightRecheck(ctx,row):null;
   },
 });
+export const getSavedFlightRecheck=async(ctx:QueryCtx,row:Doc<"flightRecheckRuns">)=>{
+  if(row.status!=="ready")return null;
+  try{const evidence=await completeParts(ctx,row);return evidence?JSON.stringify(evidence):null;}catch{return null;}
+};
 export const complete=internalMutation({
   args:{workflowId:vWorkflowId,result:vResultValidator,context:v.object({runId:v.id("flightRecheckRuns")})},returns:v.null(),handler:async(ctx,args)=>{
     const row=await ctx.db.get(args.context.runId);
