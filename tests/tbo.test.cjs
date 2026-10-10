@@ -151,3 +151,34 @@ test('failed or empty supplier authentication is a safe failure without retry or
     assert.equal(s.authenticationCalls,1);assert.equal(JSON.stringify(result).includes('PRIVATE'),false);assert.equal(s.calls.length,0);
   }
 });
+
+test('flight recheck preserves commission, withholding, charge and tax fields without deriving NET or adding them to offered fare',async()=>{
+  const selected=fare();Object.assign(selected.Fare,{BaseFare:9000,Tax:1000,OfferedFare:10000,PublishedFare:11000,
+    Discount:20,CommissionEarned:100,PLBEarned:30,IncentiveEarned:10,TdsOnCommission:5,TdsOnPLB:2,TdsOnIncentive:1,
+    PGCharge:12,ServiceFee:15,TotalBaggageCharges:40,TotalMealCharges:50,TotalSeatCharges:60,TotalSpecialServiceCharges:70,
+    TaxBreakup:[{key:'K3',value:800}],ChargeBU:[{key:'TBOMARKUP',value:200}]});
+  selected.FareBreakdown=[{Currency:'INR',PassengerType:1,PassengerCount:2,BaseFare:9000,Tax:1000,PGCharge:6,
+    SupplierReissueCharges:25,TaxBreakUp:[{key:'K3',value:400}]}];
+  const {api}=actions({Response:{ResponseStatus:1,TraceId:'synthetic-trace',Results:selected}});
+  const result=await api.recheckFlight.handler({}, {traceId:'synthetic-trace',resultIndex:'synthetic-index',resultGroup:0}),e=result.fareEvidence;
+  assert.equal(result.fare.supplierTotal,10000);assert.equal(e.offeredFare,10000);assert.equal(e.publishedFare,11000);
+  for(const [key,value] of Object.entries({discount:20,commissionEarned:100,plbEarned:30,incentiveEarned:10,
+    tdsOnCommission:5,tdsOnPlb:2,tdsOnIncentive:1,paymentGatewayCharge:12,totalBaggageCharges:40,totalMealCharges:50,
+    totalSeatCharges:60,totalSpecialServiceCharges:70}))assert.equal(e[key],value,key);
+  assert.equal(e.taxBreakup[0].amount,800);assert.equal(e.chargeBreakup[0].label,'TBOMARKUP');
+  assert.equal(e.passengerBreakdown[0].taxBreakup[0].amount,400);assert.equal(e.passengerBreakdown[0].paymentGatewayCharge,6);
+  assert.equal(e.passengerBreakdown[0].supplierReissueCharges,25);
+  assert.equal(e.netCostBasisVerified,false);assert.equal(e.gstTreatmentVerified,false);assert.equal(result.fare.compulsoryFeesConfirmed,false);
+});
+test('missing flight amounts and breakdowns remain unknown; reported zero is retained without verifying taxes',async()=>{
+  const selected=fare();selected.Fare.CommissionEarned=0;
+  const {api}=actions({Response:{ResponseStatus:1,TraceId:'synthetic-trace',Results:selected}});
+  const e=(await api.recheckFlight.handler({}, {traceId:'synthetic-trace',resultIndex:'synthetic-index',resultGroup:0})).fareEvidence;
+  assert.equal(e.commissionEarned,0);assert.equal(e.tdsOnCommission,null);assert.equal(e.taxBreakup,null);assert.equal(e.chargeBreakup,null);
+  assert.equal(e.totalMealCharges,null);assert.equal(e.netCostBasisVerified,false);assert.equal(e.gstTreatmentVerified,false);
+});
+test('excessive flight charge breakdown blocks rather than silently dropping cost evidence',async()=>{
+  const selected=fare();selected.Fare.ChargeBU=Array.from({length:101},()=>({key:'SAMPLE',value:1}));
+  const {api}=actions({Response:{ResponseStatus:1,TraceId:'synthetic-trace',Results:selected}});
+  await assert.rejects(()=>api.recheckFlight.handler({}, {traceId:'synthetic-trace',resultIndex:'synthetic-index',resultGroup:0}),/breakdown.*limit/);
+});

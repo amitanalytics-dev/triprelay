@@ -26,17 +26,24 @@ const flightRate = v.object({ resultIndex: v.string(), resultGroup: v.number(), 
   })), compulsoryFeesConfirmed: v.literal(false) });
 const nullableAmount = v.union(v.number(), v.null());
 const nullableFlag = v.union(v.boolean(), v.null());
+const moneyBreakdown=v.union(v.array(v.object({label:v.string(),amount:nullableAmount})),v.null());
 const fareEvidence = v.object({
   baseFare: nullableAmount, tax: nullableAmount, yqTax: nullableAmount,
   otherCharges: nullableAmount, serviceFee: nullableAmount,
   additionalTransactionFeeOffered: nullableAmount,
   additionalTransactionFeePublished: nullableAmount,
   publishedFare: nullableAmount, offeredFare: nullableAmount,
+  discount:nullableAmount,commissionEarned:nullableAmount,plbEarned:nullableAmount,incentiveEarned:nullableAmount,
+  tdsOnCommission:nullableAmount,tdsOnPlb:nullableAmount,tdsOnIncentive:nullableAmount,paymentGatewayCharge:nullableAmount,
+  totalBaggageCharges:nullableAmount,totalMealCharges:nullableAmount,totalSeatCharges:nullableAmount,totalSpecialServiceCharges:nullableAmount,
+  taxBreakup:moneyBreakdown,chargeBreakup:moneyBreakdown,
   passengerBreakdown: v.array(v.object({ currency: v.union(v.string(), v.null()),
     passengerType: nullableAmount, passengerCount: nullableAmount,
     baseFare: nullableAmount, tax: nullableAmount, yqTax: nullableAmount,
     additionalTransactionFeeOffered: nullableAmount,
-    additionalTransactionFeePublished: nullableAmount })),
+    additionalTransactionFeePublished: nullableAmount,paymentGatewayCharge:nullableAmount,
+    supplierReissueCharges:nullableAmount,taxBreakup:moneyBreakdown })),
+  netCostBasisVerified:v.literal(false),gstTreatmentVerified:v.literal(false),
   calculation: v.literal("supplier_fields_preserved_not_added_together"),
 });
 const fareRule = v.object({ origin: v.string(), destination: v.string(), airline: v.string(),
@@ -47,6 +54,15 @@ function reference(value: string, label: string) {
     throw new Error(`Use a valid ${label} from the supplier flight search.`);
   }
 }
+function breakdown(value:unknown){
+  if(value===undefined || value===null)return null;
+  if(!Array.isArray(value) || value.length>100)throw new Error("Supplier money breakdown exceeds the supported limit or format.");
+  return value.map(entry=>{
+    const row=object(entry),label=string(row.key);
+    if(!label.trim() || label.length>100 || /[\u0000-\u001f\u007f]/.test(label))throw new Error("Supplier money breakdown has an invalid label.");
+    return {label,amount:finite(row.value)};
+  });
+}
 function evidence(value: unknown) {
   const result = object(value), fare = object(result.Fare);
   return {
@@ -55,14 +71,22 @@ function evidence(value: unknown) {
     additionalTransactionFeeOffered: finite(fare.AdditionalTxnFeeOfrd),
     additionalTransactionFeePublished: finite(fare.AdditionalTxnFeePub),
     publishedFare: finite(fare.PublishedFare), offeredFare: finite(fare.OfferedFare),
+    discount:finite(fare.Discount),commissionEarned:finite(fare.CommissionEarned),plbEarned:finite(fare.PLBEarned),
+    incentiveEarned:finite(fare.IncentiveEarned),tdsOnCommission:finite(fare.TdsOnCommission),
+    tdsOnPlb:finite(fare.TdsOnPLB),tdsOnIncentive:finite(fare.TdsOnIncentive),paymentGatewayCharge:finite(fare.PGCharge),
+    totalBaggageCharges:finite(fare.TotalBaggageCharges),totalMealCharges:finite(fare.TotalMealCharges),
+    totalSeatCharges:finite(fare.TotalSeatCharges),totalSpecialServiceCharges:finite(fare.TotalSpecialServiceCharges),
+    taxBreakup:breakdown(fare.TaxBreakup),chargeBreakup:breakdown(fare.ChargeBU),
     passengerBreakdown: array(result.FareBreakdown).map((entry) => {
       const row = object(entry);
       return { currency: string(row.Currency) || null,
         passengerType: finite(row.PassengerType), passengerCount: finite(row.PassengerCount),
         baseFare: finite(row.BaseFare), tax: finite(row.Tax), yqTax: finite(row.YQTax),
         additionalTransactionFeeOffered: finite(row.AdditionalTxnFeeOfrd),
-        additionalTransactionFeePublished: finite(row.AdditionalTxnFeePub) };
+        additionalTransactionFeePublished: finite(row.AdditionalTxnFeePub),paymentGatewayCharge:finite(row.PGCharge),
+        supplierReissueCharges:finite(row.SupplierReissueCharges),taxBreakup:breakdown(row.TaxBreakUp) };
     }), calculation: "supplier_fields_preserved_not_added_together" as const,
+    netCostBasisVerified:false as const,gstTreatmentVerified:false as const,
   };
 }
 function date(value: string) {
